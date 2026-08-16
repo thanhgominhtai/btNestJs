@@ -21,6 +21,12 @@ export class OrderRecipeSnapshot {
 
   @Prop({ default: '' })
   category: string;
+
+  @Prop({ default: '' })
+  description?: string;
+
+  @Prop({ type: [{ name: String, quantity: Number, unit: String }], default: [] })
+  toppings?: Array<{ name: string; quantity: number; unit: string }>;
 }
 export const OrderRecipeSnapshotSchema = SchemaFactory.createForClass(OrderRecipeSnapshot);
 

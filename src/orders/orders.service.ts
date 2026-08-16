@@ -54,6 +54,8 @@ export class OrdersService {
         giaCoBan: recipe.giaCoBan,
         imgUrl: recipe.imgUrl,
         category: recipe.category,
+        description: recipe.description,
+        toppings: recipe.toppings || [],
       },
       portions: dto.portions,
       note: dto.note?.trim() || '',
