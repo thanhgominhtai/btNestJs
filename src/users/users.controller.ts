@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
   Delete,
   Body,
@@ -28,6 +29,19 @@ export class UsersController {
   @Get('me')
   getProfile(@CurrentUser('userId') userId: string) {
     return this.usersService.getProfile(userId);
+  }
+
+  @Get('me/favorites')
+  getFavorites(@CurrentUser('userId') userId: string) {
+    return this.usersService.getFavorites(userId);
+  }
+
+  @Post('me/favorites/:recipeId')
+  toggleFavorite(
+    @CurrentUser('userId') userId: string,
+    @Param('recipeId') recipeId: string,
+  ) {
+    return this.usersService.toggleFavorite(userId, recipeId);
   }
 
   @Patch('me')

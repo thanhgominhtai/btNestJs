@@ -143,4 +143,34 @@ export class UsersService {
     await targetUser.save();
     return targetUser;
   }
+
+  async getFavorites(userId: string): Promise<string[]> {
+    if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
+    const user = await this.userModel.findById(userId).select('favorites');
+    if (!user) throw new NotFoundException('User not found');
+    return user.favorites || [];
+  }
+
+  async toggleFavorite(userId: string, recipeId: string): Promise<{ isFavorite: boolean; favorites: string[] }> {
+    if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+
+    if (!user.favorites) {
+      user.favorites = [];
+    }
+
+    const index = user.favorites.indexOf(recipeId);
+    let isFavorite = false;
+    if (index > -1) {
+      user.favorites.splice(index, 1);
+      isFavorite = false;
+    } else {
+      user.favorites.push(recipeId);
+      isFavorite = true;
+    }
+
+    await user.save();
+    return { isFavorite, favorites: user.favorites };
+  }
 }

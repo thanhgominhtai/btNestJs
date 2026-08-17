@@ -30,6 +30,9 @@ export class User {
 
   @Prop({ type: String, enum: Role, default: Role.USER })
   role: Role;
+
+  @Prop({ type: [String], default: [] })
+  favorites: string[];
 }
 
 export type UserDocument = User & Document;
