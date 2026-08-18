@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { StatsService } from './stats.service';
 import { CustomJwtAuthGuard } from '../common/guards/custom-jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -11,7 +11,10 @@ export class StatsController {
 
   @Get('dashboard')
   @Roles(Role.ADMIN)
-  getDashboardStats() {
-    return this.statsService.getDashboardStats();
+  getDashboardStats(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.statsService.getDashboardStats(startDate, endDate);
   }
 }

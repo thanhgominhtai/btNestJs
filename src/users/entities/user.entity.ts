@@ -33,6 +33,18 @@ export class User {
 
   @Prop({ type: [String], default: [] })
   favorites: string[];
+
+  @Prop({ default: false })
+  isDeleted: boolean;
+
+  @Prop({ type: Date, default: null })
+  deletedAt: Date | null;
+
+  @Prop({ type: String, default: null })
+  restoreOtp: string | null;
+
+  @Prop({ type: Date, default: null })
+  restoreOtpExpires: Date | null;
 }
 
 export type UserDocument = User & Document;

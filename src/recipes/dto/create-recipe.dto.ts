@@ -53,6 +53,10 @@ export class CreateRecipeDto {
   isPopular?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  isSpecial?: boolean;
+
+  @IsOptional()
   @IsString()
   category?: string;
 

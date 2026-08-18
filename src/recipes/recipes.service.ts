@@ -12,6 +12,7 @@ export const STARBUCKS_RECIPES_SEED = [
     giaCoBan: 65000,
     imgUrl: 'https://images.unsplash.com/photo-1485808191679-5f86510681a2?w=700',
     isPopular: true,
+    isSpecial: true,
     category: 'Cà phê',
     authorEmail: 'barista@starbucks.vn',
     toppings: [
@@ -26,6 +27,7 @@ export const STARBUCKS_RECIPES_SEED = [
     giaCoBan: 55000,
     imgUrl: 'https://images.unsplash.com/photo-1558857563-b371033873b8?w=700',
     isPopular: true,
+    isSpecial: false,
     category: 'Trà sữa',
     authorEmail: 'barista@starbucks.vn',
     toppings: [
@@ -40,7 +42,8 @@ export const STARBUCKS_RECIPES_SEED = [
     giaCoBan: 68000,
     imgUrl: 'https://images.unsplash.com/photo-1515823064-d6e0c04616a7?w=700',
     isPopular: true,
-    category: 'Đặc biệt',
+    isSpecial: true,
+    category: 'Cà phê',
     authorEmail: 'barista@starbucks.vn',
     toppings: [
       { name: 'Bột Matcha Uji', quantity: 10, unit: 'g', price: 12000 },
@@ -53,6 +56,7 @@ export const STARBUCKS_RECIPES_SEED = [
     giaCoBan: 62000,
     imgUrl: 'https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=700',
     isPopular: false,
+    isSpecial: false,
     category: 'Cà phê',
     authorEmail: 'barista@starbucks.vn',
     toppings: [
@@ -66,6 +70,7 @@ export const STARBUCKS_RECIPES_SEED = [
     giaCoBan: 50000,
     imgUrl: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=700',
     isPopular: false,
+    isSpecial: false,
     category: 'Trà trái cây',
     authorEmail: 'barista@starbucks.vn',
     toppings: [
@@ -87,20 +92,43 @@ export class RecipesService implements OnModuleInit {
     if (count === 0) {
       await this.recipeModel.insertMany(STARBUCKS_RECIPES_SEED);
       console.log('[RECIPES] Đã seed thành công các món Starbuck menu mẫu!');
+    } else {
+      // Fix legacy categories to real categories and set isSpecial flag
+      await this.recipeModel.updateMany(
+        { category: { $in: ['Đặc biệt', 'Matcha & Trà', 'Đá xay'] } },
+        { $set: { category: 'Cà phê', isSpecial: true } },
+      );
+      await this.recipeModel.updateMany(
+        { name: { $in: ['Matcha Espresso Fusion Thượng Hạng', 'Caramel Macchiato Đặc Biệt'] } },
+        { $set: { isSpecial: true } },
+      );
     }
   }
 
   async findAll(keyword?: string, category?: string) {
     const query: any = {};
-    if (keyword && keyword.trim()) {
-      const key = keyword.trim();
-      query.$or = [
-        { name: { $regex: key, $options: 'i' } },
-        { description: { $regex: key, $options: 'i' } },
-      ];
+    if (category && category.trim() && category !== 'Tất cả' && category !== 'all') {
+      const cat = category.trim();
+      if (cat === 'Đặc biệt' || cat === 'special') {
+        query.isSpecial = true;
+      } else if (cat === 'Bán chạy' || cat === 'popular') {
+        query.isPopular = true;
+      } else {
+        query.category = cat;
+      }
     }
-    if (category && category.trim() && category !== 'Tất cả') {
-      query.category = category.trim();
+    if (keyword && keyword.trim()) {
+      const rawKey = keyword.trim();
+      const words = rawKey.split(/\s+/).filter((w) => w.length > 0);
+      if (words.length > 0) {
+        const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const lookaheadPattern = words.map((w) => `(?=.*${escapeRegex(w)})`).join('');
+        query.$or = [
+          { name: { $regex: lookaheadPattern, $options: 'i' } },
+          { description: { $regex: lookaheadPattern, $options: 'i' } },
+          { 'toppings.name': { $regex: lookaheadPattern, $options: 'i' } },
+        ];
+      }
     }
     return this.recipeModel.find(query).sort({ createdAt: -1 });
   }

@@ -23,6 +23,10 @@ import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 
+import { ReactivateAccountDto } from './dto/reactivate-account.dto';
+import { SendRestoreOtpDto, ConfirmRestoreOtpDto } from './dto/restore-account.dto';
+import { OverwriteAccountDto } from './dto/overwrite-account.dto';
+
 @Injectable()
 export class AuthService implements OnModuleInit {
   constructor(
@@ -94,8 +98,18 @@ export class AuthService implements OnModuleInit {
   }
 
   async signUp(dto: SignUpDto) {
-    const existing = await this.userModel.findOne({ email: dto.email.toLowerCase().trim() });
+    const email = dto.email.toLowerCase().trim();
+    const existing = await this.userModel.findOne({ email });
     if (existing) {
+      if (existing.isDeleted) {
+        // Tài khoản đã từng tồn tại và đang bị xóa mềm
+        return {
+          isDeactivatedAccount: true,
+          email: existing.email,
+          name: existing.name,
+          message: 'Email này từng có tài khoản trước đây và đang trong trạng thái tạm ngưng. Bạn có muốn khôi phục lại dữ liệu cũ hay tạo mới tinh?',
+        };
+      }
       throw new ConflictException('Email này đã được đăng ký trong hệ thống');
     }
 
@@ -103,10 +117,11 @@ export class AuthService implements OnModuleInit {
     // Mọi tài khoản đăng ký mới luôn luôn có vai trò là USER
     const newUser = new this.userModel({
       name: dto.name.trim(),
-      email: dto.email.toLowerCase().trim(),
+      email,
       password: hashedPassword,
       role: Role.USER,
-      avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(dto.email)}`,
+      isDeleted: false,
+      avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`,
     });
 
     await newUser.save();
@@ -114,7 +129,8 @@ export class AuthService implements OnModuleInit {
   }
 
   async signIn(dto: SignInDto) {
-    const user = await this.userModel.findOne({ email: dto.email.toLowerCase().trim() });
+    const email = dto.email.toLowerCase().trim();
+    const user = await this.userModel.findOne({ email });
     if (!user) {
       throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
     }
@@ -124,6 +140,106 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
     }
 
+    // Nếu tài khoản đang trong trạng thái xóa mềm
+    if (user.isDeleted) {
+      return {
+        isDeactivatedAccount: true,
+        email: user.email,
+        name: user.name,
+        message: 'Tài khoản của bạn đang trong trạng thái tạm ngưng (Xóa mềm). Bạn có muốn kích hoạt lại để sử dụng ngay không?',
+      };
+    }
+
+    return this.generateTokens(user);
+  }
+
+  async reactivateAccount(dto: ReactivateAccountDto) {
+    const email = dto.email.toLowerCase().trim();
+    const user = await this.userModel.findOne({ email });
+    if (!user) {
+      throw new NotFoundException('Tài khoản không tồn tại');
+    }
+
+    const isMatch = await bcrypt.compare(dto.password, user.password);
+    if (!isMatch) {
+      throw new UnauthorizedException('Mật khẩu không chính xác để kích hoạt lại tài khoản');
+    }
+
+    user.isDeleted = false;
+    user.deletedAt = null;
+    await user.save();
+
+    return this.generateTokens(user);
+  }
+
+  async sendRestoreOtp(dto: SendRestoreOtpDto) {
+    const email = dto.email.toLowerCase().trim();
+    const user = await this.userModel.findOne({ email, isDeleted: true });
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy tài khoản tạm ngưng nào ứng với email này');
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+
+    user.restoreOtp = otp;
+    user.restoreOtpExpires = expiresAt;
+    await user.save();
+
+    await this.mailService.sendOtpEmail(user.email, otp, 'Khôi phục tài khoản');
+
+    console.log(`[AUTH-RESTORE] Đã tạo mã OTP khôi phục tài khoản cho ${user.email}: ${otp}`);
+
+    return {
+      message: `Mã OTP khôi phục tài khoản đã được gửi đến ${user.email} (hiệu lực 10 phút). Vui lòng kiểm tra hộp thư của bạn.`,
+      email: user.email,
+    };
+  }
+
+  async confirmRestoreOtp(dto: ConfirmRestoreOtpDto) {
+    const email = dto.email.toLowerCase().trim();
+    const user = await this.userModel.findOne({
+      email,
+      isDeleted: true,
+      restoreOtp: dto.otp.trim(),
+      restoreOtpExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Mã OTP khôi phục không hợp lệ hoặc đã hết hạn');
+    }
+
+    user.isDeleted = false;
+    user.deletedAt = null;
+    user.restoreOtp = null;
+    user.restoreOtpExpires = null;
+
+    if (dto.newPassword && dto.newPassword.trim().length >= 6) {
+      user.password = await bcrypt.hash(dto.newPassword.trim(), 10);
+    }
+
+    await user.save();
+    return this.generateTokens(user);
+  }
+
+  async overwriteAccount(dto: OverwriteAccountDto) {
+    const email = dto.email.toLowerCase().trim();
+    const user = await this.userModel.findOne({ email, isDeleted: true });
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy tài khoản để tạo mới');
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.password, 10);
+    user.name = dto.name.trim();
+    user.password = hashedPassword;
+    user.favorites = [];
+    user.isDeleted = false;
+    user.deletedAt = null;
+    user.restoreOtp = null;
+    user.restoreOtpExpires = null;
+    user.avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`;
+
+    await user.save();
     return this.generateTokens(user);
   }
 

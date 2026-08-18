@@ -5,6 +5,7 @@ import {
   BadRequestException,
   ForbiddenException,
   UnauthorizedException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -16,16 +17,28 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     @InjectModel(RefreshToken.name) private readonly refreshTokenModel: Model<RefreshTokenDocument>,
   ) {}
 
+  async onModuleInit(): Promise<void> {
+    // 90-Day Retention Policy: Xoá cứng vĩnh viễn các tài khoản đã xóa mềm quá 90 ngày
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const result = await this.userModel.deleteMany({
+      isDeleted: true,
+      deletedAt: { $lte: ninetyDaysAgo },
+    });
+    if (result.deletedCount > 0) {
+      console.log(`🧹 [CLEANUP] Đã xóa cứng ${result.deletedCount} tài khoản hết hạn lưu giữ 90 ngày.`);
+    }
+  }
+
   async getProfile(userId: string) {
     if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
     const user = await this.userModel.findById(userId);
-    if (!user) throw new NotFoundException('User not found');
+    if (!user || user.isDeleted) throw new NotFoundException('User not found');
     return user;
   }
 
@@ -93,17 +106,26 @@ export class UsersService {
 
   async deleteAccount(userId: string) {
     if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
-    const user = await this.userModel.findByIdAndDelete(userId);
+    const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
 
-    // Remove tokens
+    if (user.email.toLowerCase() === 'admin@starbucks.vn') {
+      throw new ForbiddenException('Không thể xoá tài khoản Quản trị viên gốc của hệ thống (admin@starbucks.vn)');
+    }
+
+    // Soft Delete: Gắn cờ xóa mềm và lưu thời điểm xóa để áp dụng chính sách ân hạn 90 ngày
+    user.isDeleted = true;
+    user.deletedAt = new Date();
+    await user.save();
+
+    // Hủy toàn bộ refresh token để lập tức đăng xuất
     await this.refreshTokenModel.deleteMany({ userId: new Types.ObjectId(userId) });
 
-    return { message: 'Tài khoản đã được xoá vĩnh viễn' };
+    return { message: 'Tài khoản đã được chuyển sang trạng thái tạm ngưng (Xóa mềm - Lưu giữ 90 ngày)' };
   }
 
   async getAdmins(keyword?: string) {
-    const query: any = { role: Role.ADMIN };
+    const query: any = { role: Role.ADMIN, isDeleted: { $ne: true } };
     if (keyword && keyword.trim()) {
       const key = keyword.trim();
       query.$or = [
@@ -115,7 +137,7 @@ export class UsersService {
   }
 
   async getAllUsers(keyword?: string) {
-    const query: any = {};
+    const query: any = { isDeleted: { $ne: true } };
     if (keyword && keyword.trim()) {
       const key = keyword.trim();
       query.$or = [
@@ -131,12 +153,14 @@ export class UsersService {
     const targetUser = await this.userModel.findById(targetUserId);
     if (!targetUser) throw new NotFoundException('Target user not found');
 
-    // Safe-guard: Check if admin is removing their own admin role
-    if (targetUserId === currentAdminId && newRole === Role.USER) {
-      const adminCount = await this.userModel.countDocuments({ role: Role.ADMIN });
-      if (adminCount <= 1) {
-        throw new ForbiddenException('Không thể thu hồi quyền của Admin duy nhất trong hệ thống');
-      }
+    // Rule 1: Root / Super Admin (admin@starbucks.vn) cannot have admin role revoked
+    if (targetUser.email.toLowerCase() === 'admin@starbucks.vn' && newRole !== Role.ADMIN) {
+      throw new ForbiddenException('Không được phép thu hồi quyền Quản trị viên gốc (admin@starbucks.vn)');
+    }
+
+    // Rule 2: Current admin cannot revoke their own admin role
+    if (targetUserId === currentAdminId && newRole !== Role.ADMIN) {
+      throw new ForbiddenException('Bạn không thể tự thu hồi quyền Quản trị viên của chính mình');
     }
 
     targetUser.role = newRole;

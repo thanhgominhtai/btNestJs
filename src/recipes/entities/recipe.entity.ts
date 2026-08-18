@@ -45,7 +45,10 @@ export class Recipe {
   @Prop({ default: false })
   isPopular: boolean;
 
-  @Prop({ default: 'Đặc biệt' })
+  @Prop({ default: false })
+  isSpecial: boolean;
+
+  @Prop({ default: 'Cà phê' })
   category: string;
 
   @Prop({ default: 'admin@starbucks.vn' })

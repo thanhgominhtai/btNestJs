@@ -6,6 +6,9 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ReactivateAccountDto } from './dto/reactivate-account.dto';
+import { SendRestoreOtpDto, ConfirmRestoreOtpDto } from './dto/restore-account.dto';
+import { OverwriteAccountDto } from './dto/overwrite-account.dto';
 import { Public } from '../common/decorators/public.decorator';
 
 @Controller('auth')
@@ -23,6 +26,34 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   signIn(@Body() dto: SignInDto) {
     return this.authService.signIn(dto);
+  }
+
+  @Public()
+  @Post('reactivate')
+  @HttpCode(HttpStatus.OK)
+  reactivate(@Body() dto: ReactivateAccountDto) {
+    return this.authService.reactivateAccount(dto);
+  }
+
+  @Public()
+  @Post('send-restore-otp')
+  @HttpCode(HttpStatus.OK)
+  sendRestoreOtp(@Body() dto: SendRestoreOtpDto) {
+    return this.authService.sendRestoreOtp(dto);
+  }
+
+  @Public()
+  @Post('confirm-restore-otp')
+  @HttpCode(HttpStatus.OK)
+  confirmRestoreOtp(@Body() dto: ConfirmRestoreOtpDto) {
+    return this.authService.confirmRestoreOtp(dto);
+  }
+
+  @Public()
+  @Post('overwrite-account')
+  @HttpCode(HttpStatus.OK)
+  overwriteAccount(@Body() dto: OverwriteAccountDto) {
+    return this.authService.overwriteAccount(dto);
   }
 
   @Public()

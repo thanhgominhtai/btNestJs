@@ -153,12 +153,36 @@ export class OrdersService {
       query.status = status.trim();
     }
     if (keyword && keyword.trim()) {
-      const key = keyword.trim();
-      query.$or = [
-        { userName: { $regex: key, $options: 'i' } },
-        { userEmail: { $regex: key, $options: 'i' } },
-        { 'recipeSnapshot.name': { $regex: key, $options: 'i' } },
-      ];
+      const rawKey = keyword.trim();
+      const cleanCode = rawKey.replace(/^#/, '').trim();
+      const words = cleanCode.split(/\s+/).filter((w) => w.length > 0);
+
+      if (words.length > 0) {
+        const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Positive lookahead matches all words regardless of their order
+        const lookaheadPattern = words.map((w) => `(?=.*${escapeRegex(w)})`).join('');
+
+        const orConditions: any[] = [
+          { userName: { $regex: lookaheadPattern, $options: 'i' } },
+          { userEmail: { $regex: lookaheadPattern, $options: 'i' } },
+          { 'recipeSnapshot.name': { $regex: lookaheadPattern, $options: 'i' } },
+        ];
+
+        // Search by Order ID (supports partial code, case-insensitive, with/without #)
+        if (cleanCode.length > 0) {
+          orConditions.push({
+            $expr: {
+              $regexMatch: {
+                input: { $toString: '$_id' },
+                regex: escapeRegex(cleanCode),
+                options: 'i',
+              },
+            },
+          });
+        }
+
+        query.$or = orConditions;
+      }
     }
     return this.orderModel.find(query).sort({ createdAt: -1 }).exec();
   }
