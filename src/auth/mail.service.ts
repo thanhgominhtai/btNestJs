@@ -1,17 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import * as dns from 'dns/promises';
 
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
   private transporter: nodemailer.Transporter | null = null;
+  private readonly senderEmail: string;
 
   constructor(private readonly config: ConfigService) {
-    const host = this.config.get<string>('SMTP_HOST') || 'smtp.gmail.com';
+    const host = this.config.get<string>('SMTP_HOST') || 'smtp-relay.brevo.com';
     const port = Number(this.config.get<number>('SMTP_PORT', 587));
     const user = this.config.get<string>('SMTP_USER');
     const pass = this.config.get<string>('SMTP_PASS');
+    this.senderEmail = this.config.get<string>('SMTP_FROM') || user || 'no-reply@starbucks.vn';
 
     if (user && pass) {
       this.transporter = nodemailer.createTransport({
@@ -20,7 +23,7 @@ export class MailService {
         secure: port === 465,
         auth: { user, pass },
       });
-      this.logger.log(`📧 Mailer đã kích hoạt gửi email thực tế qua: ${user}`);
+      this.logger.log(`📧 Mailer đã kích hoạt gửi email qua SMTP: ${host} (User: ${user})`);
     } else {
       this.logger.warn(
         '⚠️ SMTP chưa cấu hình SMTP_USER / SMTP_PASS trong .env - Mã OTP sẽ được in ra console log server và hiển thị devOtp.',
@@ -28,17 +31,45 @@ export class MailService {
     }
   }
 
+  /**
+   * Kiểm tra xem domain của email có bản ghi MX (Mail Exchange) hợp lệ không.
+   * Giúp loại bỏ hoàn toàn các email có tên miền ảo, rác không có mail server.
+   */
+  async isDomainDeliverable(email: string): Promise<boolean> {
+    try {
+      const parts = email.split('@');
+      if (parts.length !== 2) return false;
+      const domain = parts[1].toLowerCase().trim();
+      if (!domain) return false;
+
+      const mxRecords = await dns.resolveMx(domain);
+      return Boolean(mxRecords && mxRecords.length > 0);
+    } catch {
+      return false;
+    }
+  }
+
   async sendOtpEmail(to: string, otp: string, purpose: string = 'Khôi phục mật khẩu'): Promise<boolean> {
+    const cleanTo = to.toLowerCase().trim();
+
+    // 1. Kiểm tra DNS MX record trước khi gọi server gửi mail
+    const isDeliverable = await this.isDomainDeliverable(cleanTo);
+    if (!isDeliverable) {
+      this.logger.warn(
+        `⚠️ Domain của email "${cleanTo}" không tồn tại hoặc không có máy chủ nhận mail (MX). Đã chặn gửi để tránh spam bounce!`,
+      );
+      return false;
+    }
+
     if (!this.transporter) {
-      this.logger.log(`[SIMULATE EMAIL] [${purpose}] Đã tạo mã OTP cho ${to}: ${otp}`);
+      this.logger.log(`[SIMULATE EMAIL] [${purpose}] Đã tạo mã OTP cho ${cleanTo}: ${otp}`);
       return false;
     }
 
     try {
-      const fromUser = this.config.get<string>('SMTP_USER');
       await this.transporter.sendMail({
-        from: `"Starbucks Coffee" <${fromUser}>`,
-        to,
+        from: `"Starbucks Coffee" <${this.senderEmail}>`,
+        to: cleanTo,
         subject: `☕ [Starbucks] Mã OTP ${purpose}: ${otp}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto; padding: 28px; border: 1px solid #edebe9; border-radius: 16px; background-color: #faf6ee;">
@@ -48,7 +79,7 @@ export class MailService {
             </div>
             <p style="color: #1e3932; font-size: 15px; font-weight: bold;">Xin chào,</p>
             <p style="color: #333; font-size: 14px; line-height: 1.6;">
-              Hệ thống nhận được yêu cầu <b>${purpose.toLowerCase()}</b> cho tài khoản <b>${to}</b>. Vui lòng sử dụng mã OTP 6 chữ số dưới đây để tiếp tục:
+              Hệ thống nhận được yêu cầu <b>${purpose.toLowerCase()}</b> cho tài khoản <b>${cleanTo}</b>. Vui lòng sử dụng mã OTP 6 chữ số dưới đây để tiếp tục:
             </p>
             <div style="text-align: center; margin: 24px 0;">
               <div style="display: inline-block; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #006241; background: #ffffff; padding: 14px 28px; border-radius: 14px; border: 2px dashed #00754a; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
@@ -65,10 +96,10 @@ export class MailService {
           </div>
         `,
       });
-      this.logger.log(`✅ Đã gửi email OTP (${purpose}) thực tế thành công tới: ${to}`);
+      this.logger.log(`✅ Đã gửi email OTP (${purpose}) thực tế thành công tới: ${cleanTo}`);
       return true;
     } catch (err: any) {
-      this.logger.error(`❌ Gửi email OTP thất bại tới ${to}: ${err.message}`);
+      this.logger.error(`❌ Gửi email OTP thất bại tới ${cleanTo}: ${err.message}`);
       return false;
     }
   }
