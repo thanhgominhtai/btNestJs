@@ -99,27 +99,25 @@ export class UploadService {
           gore,
         });
 
-        // 1. Extreme 18+ / Porn / Explicit Nudity / Sexual activity
-        if (sexualActivity > 0.30 || sexualDisplay > 0.30 || erotica > 0.40 || sextoy > 0.35) {
+        const actPct = Math.round(sexualActivity * 100);
+        const dispPct = Math.round(sexualDisplay * 100);
+        const eroPct = Math.round(erotica * 100);
+        const safePct = Math.round((nudity.none || 0) * 100);
+        const gorePct = Math.round(gore * 100);
+
+        // 1. Strict 18+ Porn / Explicit Genital Nudity / Sexual Activity Only
+        if (sexualActivity > 0.50 || sexualDisplay > 0.50 || erotica > 0.60 || sextoy > 0.50) {
           if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
           throw new BadRequestException(
-            '⚠️ Hình ảnh chứa nội dung 18+ / khoả thân nhạy cảm vi phạm chuẩn mực cộng đồng Starbucks. Vui lòng chọn hình ảnh khác!',
+            `⚠️ Ảnh bị chặn do vi phạm 18+ / Khoả thân! [Chi tiết: Khoả thân: ${dispPct}% | Khiêu dâm: ${eroPct}% | Quan hệ: ${actPct}% | An toàn: ${safePct}%]`,
           );
         }
 
-        // 2. Heavy suggestive / explicit revealing
-        if (verySuggestive > 0.60 || (suggestive > 0.80 && nudity.none < 0.25)) {
+        // 2. Violence / Blood / Gore
+        if (gore > 0.60) {
           if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
           throw new BadRequestException(
-            '⚠️ Hình ảnh có tính chất hở hang hoặc quá gợi cảm không phù hợp. Vui lòng chọn hình ảnh khác!',
-          );
-        }
-
-        // 3. Violence / Blood / Gore
-        if (gore > 0.50) {
-          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-          throw new BadRequestException(
-            '⚠️ Hình ảnh chứa nội dung bạo lực hoặc máu me không phù hợp. Vui lòng chọn hình ảnh khác!',
+            `⚠️ Ảnh bị chặn do chứa nội dung bạo lực / máu me! [Chi tiết: Bạo lực: ${gorePct}% | An toàn: ${safePct}%]`,
           );
         }
       }
