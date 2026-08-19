@@ -15,9 +15,12 @@ async function bootstrap() {
     fs.mkdirSync(uploadDir, { recursive: true });
   }
 
-  // Serve static assets for uploaded images
+  // Serve static assets for uploaded images on both /uploads/ and /api/uploads/
   app.useStaticAssets(uploadDir, {
     prefix: '/uploads/',
+  });
+  app.useStaticAssets(uploadDir, {
+    prefix: '/api/uploads/',
   });
 
   // Enable CORS for Angular frontend

@@ -40,10 +40,6 @@ export const multerImageOptions = {
 @Injectable()
 export class UploadService {
   getFileUrl(filename: string): string {
-    const baseUrl =
-      process.env.APP_URL ||
-      process.env.BASE_URL ||
-      `http://localhost:${process.env.PORT || 3000}`;
-    return `${baseUrl}/uploads/${filename}`;
+    return `/uploads/${filename}`;
   }
 }
