@@ -28,18 +28,18 @@ export class OrdersService {
     userRole: string,
     dto: CreateOrderDto,
   ) {
-    // [AD-00] Admin is prohibited from placing orders
+    // Admin is prohibited from placing orders
     if (userRole === 'ADMIN') {
-      throw new ForbiddenException('Tài khoản Quản trị viên (Admin) không được phép tự đặt món (AD-00)');
+      throw new ForbiddenException('Tài khoản Quản trị viên không thể thực hiện đặt món.');
     }
 
     if (!Types.ObjectId.isValid(dto.recipeId)) {
-      throw new BadRequestException('Recipe ID không hợp lệ');
+      throw new BadRequestException('Món ăn không hợp lệ.');
     }
 
     const recipe = await this.recipeModel.findById(dto.recipeId);
     if (!recipe) {
-      throw new NotFoundException('Món ăn không tồn tại hoặc đã bị xoá');
+      throw new NotFoundException('Món ăn không tồn tại hoặc đã bị xoá.');
     }
 
     const totalPrice = recipe.giaCoBan * dto.portions;
@@ -67,10 +67,10 @@ export class OrdersService {
 
     const saved = await newOrder.save();
 
-    // Broadcast SSE realtime event for new order [BE-18]
+    // Broadcast SSE realtime event for new order
     this.realtimeService.sendEvent({
       type: 'ORDER_CREATED',
-      message: `Đơn hàng mới #${saved.id} - ${saved.recipeSnapshot.name} (${saved.portions} phần)`,
+      message: `Đơn hàng mới: ${saved.recipeSnapshot.name} (${saved.portions} phần)`,
       orderId: saved.id,
       status: saved.status,
       data: saved,
@@ -96,10 +96,9 @@ export class OrdersService {
       throw new ForbiddenException('Bạn không có quyền chỉnh sửa đơn hàng này');
     }
 
-    // [US-09] Only allow editing when order is PENDING
     if (order.status !== OrderStatus.PENDING) {
       throw new BadRequestException(
-        'Chỉ có thể chỉnh sửa đơn hàng khi đang ở trạng thái Chờ tiếp nhận (Pending)',
+        'Chỉ có thể chỉnh sửa khi đơn hàng đang ở trạng thái "Chờ tiếp nhận"',
       );
     }
 
@@ -120,9 +119,9 @@ export class OrdersService {
   }
 
   async cancel(orderId: string, userId: string) {
-    if (!Types.ObjectId.isValid(orderId)) throw new NotFoundException('Order not found');
+    if (!Types.ObjectId.isValid(orderId)) throw new NotFoundException('Không tìm thấy đơn hàng');
     const order = await this.orderModel.findById(orderId);
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException('Không tìm thấy đơn hàng');
 
     if (order.userId.toString() !== userId) {
       throw new ForbiddenException('Bạn không có quyền huỷ đơn hàng này');
@@ -138,7 +137,7 @@ export class OrdersService {
 
     this.realtimeService.sendEvent({
       type: 'ORDER_STATUS_CHANGED',
-      message: `Đơn hàng #${saved.id} đã được huỷ bởi khách hàng`,
+      message: `Đơn hàng "${saved.recipeSnapshot.name}" đã được huỷ bởi khách hàng`,
       orderId: saved.id,
       status: saved.status,
       data: saved,
@@ -188,14 +187,13 @@ export class OrdersService {
   }
 
   async adminUpdateStatus(orderId: string, dto: UpdateOrderStatusDto) {
-    if (!Types.ObjectId.isValid(orderId)) throw new NotFoundException('Order not found');
+    if (!Types.ObjectId.isValid(orderId)) throw new NotFoundException('Không tìm thấy đơn hàng');
     const order = await this.orderModel.findById(orderId);
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException('Không tìm thấy đơn hàng');
 
-    // [AD-03] Require cancelReason when status is CANCELLED
     if (dto.status === OrderStatus.CANCELLED) {
       if (!dto.cancelReason || !dto.cancelReason.trim()) {
-        throw new BadRequestException('Bắt buộc phải nhập lý do khi huỷ đơn hàng (AD-03)');
+        throw new BadRequestException('Vui lòng nhập lý do huỷ đơn hàng');
       }
       order.cancelReason = dto.cancelReason.trim();
     }
@@ -203,10 +201,10 @@ export class OrdersService {
     order.status = dto.status;
     const saved = await order.save();
 
-    // Broadcast SSE realtime event for order status update [BE-18]
+    // Broadcast SSE realtime event for order status update
     this.realtimeService.sendEvent({
       type: 'ORDER_STATUS_CHANGED',
-      message: `Đơn hàng #${saved.id} đã chuyển trạng thái sang "${saved.status}"`,
+      message: `Đơn hàng "${saved.recipeSnapshot.name}" đã chuyển trạng thái sang "${saved.status}"`,
       orderId: saved.id,
       status: saved.status,
       data: saved,
