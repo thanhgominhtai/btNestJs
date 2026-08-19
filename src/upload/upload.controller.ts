@@ -17,10 +17,14 @@ export class UploadController {
 
   @Post('image')
   @UseInterceptors(FileInterceptor('file', multerImageOptions))
-  uploadImage(@UploadedFile() file: Express.Multer.File) {
+  async uploadImage(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException('Vui lòng chọn file ảnh để tải lên');
     }
+
+    // AI Content Moderation Check (Sightengine AI)
+    await this.uploadService.validateImageModeration(file.filename);
+
     const url = this.uploadService.getFileUrl(file.filename);
     return {
       filename: file.filename,
