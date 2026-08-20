@@ -64,7 +64,7 @@ export class UploadService {
 
       const formData = new FormData();
       formData.append('media', blob, filename);
-      formData.append('models', 'nudity-2.1,gore');
+      formData.append('models', 'nudity-2.1,gore,offensive');
       formData.append('api_user', this.apiUser);
       formData.append('api_secret', this.apiSecret);
 
@@ -85,39 +85,88 @@ export class UploadService {
         const sexualDisplay = nudity.sexual_display || 0;
         const erotica = nudity.erotica || 0;
         const sextoy = nudity.sextoy || 0;
-        const verySuggestive = nudity.very_suggestive || 0;
-        const suggestive = nudity.suggestive || 0;
-        const gore = data.gore?.prob || 0;
 
-        console.log(`[Sightengine AI Analysis: ${filename}]`, {
+        const suggestiveClasses = nudity.suggestive_classes || {};
+        const nudityArt = suggestiveClasses.nudity_art || 0;
+        const lingerie = suggestiveClasses.lingerie || 0;
+        const maleChest = suggestiveClasses.male_chest || 0;
+        const visiblyUndressed = suggestiveClasses.visibly_undressed || 0;
+        const cleavageVeryRevealing =
+          suggestiveClasses.cleavage_categories?.very_revealing ||
+          suggestiveClasses.cleavage ||
+          0;
+
+        const context = nudity.context || {};
+        const isBeachOrPool =
+          (context.sea_lake_pool || 0) > 0.45 || (context.outdoor_other || 0) > 0.55;
+
+        const gore = data.gore?.prob || 0;
+        const offensive = data.offensive?.prob || 0;
+        const safeScore = nudity.none || 0;
+
+        console.log(`[Sightengine AI Comprehensive Analysis: ${filename}]`, {
           sexualActivity,
           sexualDisplay,
           erotica,
-          verySuggestive,
-          suggestive,
-          none: nudity.none,
+          nudityArt,
+          lingerie,
+          maleChest,
+          isBeachOrPool,
           gore,
+          offensive,
+          safeScore,
         });
 
         const actPct = Math.round(sexualActivity * 100);
         const dispPct = Math.round(sexualDisplay * 100);
         const eroPct = Math.round(erotica * 100);
-        const safePct = Math.round((nudity.none || 0) * 100);
+        const artPct = Math.round(nudityArt * 100);
+        const lingeriePct = Math.round(lingerie * 100);
+        const safePct = Math.round(safeScore * 100);
         const gorePct = Math.round(gore * 100);
+        const offPct = Math.round(offensive * 100);
 
-        // 1. Strict 18+ Porn / Explicit Genital Nudity / Sexual Activity Only
-        if (sexualActivity > 0.50 || sexualDisplay > 0.50 || erotica > 0.60 || sextoy > 0.50) {
+        // 1. Strict 18+ Explicit Real-world Nudity / Sexual Acts
+        if (sexualActivity > 0.38 || sexualDisplay > 0.38 || erotica > 0.45 || sextoy > 0.40) {
           if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
           throw new BadRequestException(
             `⚠️ Ảnh bị chặn do vi phạm 18+ / Khoả thân! [Chi tiết: Khoả thân: ${dispPct}% | Khiêu dâm: ${eroPct}% | Quan hệ: ${actPct}% | An toàn: ${safePct}%]`,
           );
         }
 
-        // 2. Violence / Blood / Gore
-        if (gore > 0.60) {
+        // 2. 2D / Anime / Manga 18+ (Hentai, Ecchi, Tranh vẽ khoả thân/khiêu gợi)
+        if (nudityArt > 0.35 || (erotica > 0.35 && safeScore < 0.65)) {
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+          throw new BadRequestException(
+            `⚠️ Ảnh bị chặn do chứa tranh vẽ / Anime 18+ phản cảm! [Chi tiết: Tranh 18+: ${artPct}% | Khiêu dâm: ${eroPct}% | An toàn: ${safePct}%]`,
+          );
+        }
+
+        // 3. Lewd Lingerie / Indecent Exposure Indoors (Excludes healthy Beach/Pool & Male Fitness)
+        if (
+          (lingerie > 0.60 || visiblyUndressed > 0.70 || cleavageVeryRevealing > 0.75) &&
+          !isBeachOrPool &&
+          maleChest < 0.50
+        ) {
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+          throw new BadRequestException(
+            `⚠️ Ảnh bị chặn do chứa trang phục nội y / gợi cảm quá mức! [Chi tiết: Nội y: ${lingeriePct}% | An toàn: ${safePct}%]`,
+          );
+        }
+
+        // 4. Violence / Blood / Gore / Animal cruelty
+        if (gore > 0.50) {
           if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
           throw new BadRequestException(
             `⚠️ Ảnh bị chặn do chứa nội dung bạo lực / máu me! [Chi tiết: Bạo lực: ${gorePct}% | An toàn: ${safePct}%]`,
+          );
+        }
+
+        // 5. Offensive / Hate / Extremism
+        if (offensive > 0.60) {
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+          throw new BadRequestException(
+            `⚠️ Ảnh bị chặn do chứa nội dung phản cảm hoặc thù địch! [Chi tiết: Phản cảm: ${offPct}% | An toàn: ${safePct}%]`,
           );
         }
       }
